@@ -80,14 +80,7 @@ jobs:
           sudo mkdir -p /usr/share/binfmts
           for arch in arm aarch64 x86_64 riscv64 loongarch64; do
             if [ ! -f "/usr/share/binfmts/qemu-${arch}" ]; then
-              echo "package qemu-user-static
-interpreter /usr/bin/qemu-${arch}-static
-magic \x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00
-offset 0
-mask \xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff
-credentials yes
-fix_binary no
-preserve yes" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
+              printf 'package qemu-user-static\ninterpreter /usr/bin/qemu-%s-static\nmagic \\x7f\\x45\\x4c\\x46\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\noffset 0\nmask \\xff\\xff\\xff\\xff\\xff\\xff\\xff\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff\ncredentials yes\nfix_binary no\npreserve yes\n' "${arch}" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
             fi
           done
           
