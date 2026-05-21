@@ -111,6 +111,12 @@ jobs:
           echo "=== dpkg-divert status ==="
           dpkg-divert --list /usr/sbin/update-binfmts 2>/dev/null || echo "No divert"
 
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghcActions
+          sudo apt-get clean
+          df -h
+
       - name: Copy custom board config and patches
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
