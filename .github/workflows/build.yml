@@ -111,7 +111,8 @@ jobs:
             BUILD_DESKTOP="${{ inputs.desktop || 'no' }}" \
             BUILD_MINIMAL=yes \
             KERNEL_CONFIGURE=no \
-            KERNEL_KEEP_CONFIG=no
+            KERNEL_KEEP_CONFIG=no \
+            2>&1 | tee /tmp/armbian-build.log
 
       - name: 构建失败 - 输出调试信息
         if: failure()
@@ -120,19 +121,28 @@ jobs:
           echo "--- 板级配置 ---"
           cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
           echo "--- Family 配置 ---"
-          ls -la build/config/sources/families/meson-s4t7.conf 2>/dev/null || echo "meson-s4t7.conf not found"
+          cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -50 || echo "meson-s4t7.conf not found"
           echo "--- U-Boot 源码 ---"
           ls -la build/cache/sources/u-boot/ 2>/dev/null || echo "u-boot cache not found"
+          find build/cache/sources/u-boot -name "*.log" 2>/dev/null | head -5
+          echo "--- U-Boot defconfig ---"
+          find build/cache/sources/u-boot -name "t7_an400*" -o -name "kvim4*" 2>/dev/null | head -20
+          find build/cache/sources/u-boot -path "*/configs/*defconfig" 2>/dev/null | grep -i "t7\|kvim\|an400\|tvpro\|65t33z" | head -20
+          find build/cache/sources/u-boot -path "*/board/amlogic/*" -maxdepth 5 2>/dev/null | grep -i "t7\|kvim\|an400\|tvpro\|65t33z" | head -20
+          echo "--- FIP 目录 ---"
+          find build/cache/sources/u-boot -name "fip" -type d 2>/dev/null | head -5
+          find build/cache/sources/u-boot -path "*/fip/mk*" 2>/dev/null | head -10
+          find build/cache/sources/u-boot -path "*/fip/variables*" 2>/dev/null | head -5
           echo "--- 内核源码 ---"
           ls -la build/cache/sources/kernel/ 2>/dev/null || echo "kernel cache not found"
-          echo "--- 构建日志最后 100 行 ---"
-          find build/output/logs -name "*.log" -newer build/config/boards/an400.conf 2>/dev/null | head -5 | while read f; do
+          echo "--- 构建日志（错误行）---"
+          grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:" /tmp/armbian-build.log 2>/dev/null | tail -80 || echo "No build log found"
+          echo "--- 构建日志最后 200 行 ---"
+          tail -200 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
+          echo "--- Armbian 日志文件 ---"
+          find build/output/logs -name "*.log" 2>/dev/null | head -5 | while read f; do
             echo "=== $f ==="
             tail -100 "$f" 2>/dev/null
-          done
-          find /tmp -name "*.log" -maxdepth 2 2>/dev/null | head -5 | while read f; do
-            echo "=== $f ==="
-            tail -50 "$f" 2>/dev/null
           done
 
       - name: 上传构建产物
