@@ -1,27 +1,35 @@
-# Armbian for Amlogic T7/A311D2 (AN400)
-
-## Build Armbian for Amlogic T7/A311D2 AN400 with mainline kernel, using pre-installed bootloader (no U-Boot build).
-
----
+# Armbian for Amlogic A311D2 AN400
 
 ## Device Specs
 | Spec | Details |
 |------|---------|
-| SoC | Amlogic A311D2 (T7) |
-| Memory | LPDDR4X 4GB |
-| Storage | eMMC + SD Card |
-| DTB | `amlogic-t7-a311d2-an400.dtb` (Linux 6.6+ mainline) |
-| Console | `ttyAML0`, baudrate 115200 |
+| SoC | Amlogic A311D2 (T7), Chip ID = 0x36 |
+| CPU | 4x Cortex-A73 @ ~2.2GHz + 4x Cortex-A53 @ ~2.0GHz |
+| GPU | Mali-G52 MP2 |
+| NPU | 5 TOPS |
+| Memory | LPDDR4X 8GB (Dual Channel, cs0=4GB + cs1=4GB) |
+| Storage | eMMC 64GB + SD Card |
+| WiFi/BT | Broadcom BCM4362 (dhd driver) |
+| Ethernet | DWMAC |
+| Console | ttyS0, baudrate 115200 |
+| DTB | `amlogic/t7_a311d2_an400.dtb` (legacy 5.15 vendor kernel) |
+
+---
+
+## Boot Chain
+```
+ROM → BL2 → DDR Init (LPDDR4X, 1848MHz, Dual Channel)
+    → BL2E → BL2X → DDRFIP → DEVFIP
+        → BL30 (SCP) → BL31 (TF-A) → BL32 (OP-TEE) → BL33 (U-Boot 2019.01) → BL40
+```
 
 ---
 
 ## GitHub Actions Build (Automatic)
-1. Fork this repo
-2. Enable Actions
-3. Go to **Actions** → **Build Armbian for A311D2 AN400**
-4. Click **Run workflow** (branch: master)
-5. Wait ~2-3 hours for build
-6. Download artifacts from the run
+1. Push to master branch triggers automatic build
+2. Or go to **Actions** → **Build Armbian for A311D2 AN400** → **Run workflow**
+3. Wait ~3-4 hours for build
+4. Download artifacts from the run
 
 ---
 
@@ -42,21 +50,28 @@ chmod +x build.sh
 sudo dd if=Armbian-unofficial_*.img of=/dev/sdX bs=1M status=progress
 ```
 
-### USB Burning Tool (Windows)
-Use Amlogic USB Burning Tool to flash.
-
 ---
 
 ## Build Config
 | Option | Value |
 |--------|-------|
 | BOARD | an400 |
-| BRANCH | edge (Linux 6.6+) |
+| BOARDFAMILY | meson-s4t7 |
+| BRANCH | legacy (Linux 5.15 vendor kernel) |
 | RELEASE | bookworm / noble |
-| BUILD_DESKTOP | yes / no |
+| BUILD_MINIMAL | yes |
+| BOOTCONFIG | kvim4_defconfig |
+| KHADAS_BOARD_ID | kvim4 |
+
+---
+
+## U-Boot Patches
+- `zz-AN400-Change-bootdelay-to-3.patch`: Change bootdelay from 2 to 3 seconds
+- `zz-AN400-Modify-board-id.patch`: Change board identification from VIM4 to AN400
 
 ---
 
 ## References
 - [Armbian Build Guide](https://docs.armbian.com/Developer-Guide_Build-Preparation/)
-- [Linux mainline DTS A311D2 support](https://github.com/torvalds/linux/tree/master/arch/arm64/boot/dts/amlogic/amlogic-t7-a311d2-an400.dts)
+- [meson-s4t7 family config](https://github.com/armbian/build/blob/main/config/sources/families/meson-s4t7.conf)
+- [Khadas VIM4 board config](https://github.com/armbian/build/blob/main/config/boards/khadas-vim4.conf)
