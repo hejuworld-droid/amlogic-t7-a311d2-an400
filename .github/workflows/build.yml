@@ -20,6 +20,9 @@ on:
           - no
           - yes
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -38,17 +41,52 @@ jobs:
           path: build
           ref: main
 
-      - name: 安装构建依赖
+      - name: 安装构建依赖 + QEMU + 修复 binfmt
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             bc bison build-essential ca-certificates ccache cpio curl \
             device-tree-compiler dialog dirmngr dosfstools fakeroot \
             flex gawk git gnupg gperf libelf-dev liblz4-tool \
             libncurses5-dev libsdl2-dev libssl-dev lsb-release \
             lzop mtools ninja-build parted pkg-config \
             python3 python3-pip rsync sudo swig u-boot-tools \
-            udev unzip wget xz-utils zip zlib1g-dev
+            udev unzip wget xz-utils zip zlib1g-dev \
+            qemu-user-static
+          
+          # 用内核 binfmt_misc 注册 QEMU (绕过 systemd-binfmt)
+          sudo modprobe binfmt_misc 2>/dev/null || true
+          sudo mount -t binfmt_misc none /proc/sys/fs/binfmt_misc 2>/dev/null || true
+          
+          # aarch64
+          if [ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:OCF' | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null
+          fi
+          # arm
+          if [ ! -f /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            echo ':qemu-arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-arm-static:OCF' | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null
+          fi
+          
+          # 包装 update-binfmts (systemd-binfmt 在 GH Actions 上不可用)
+          if [ -f /usr/sbin/update-binfmts ] && [ ! -f /usr/sbin/update-binfmts.real ]; then
+            sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
+            sudo tee /usr/sbin/update-binfmts << 'WRAP_EOF'
+#!/bin/bash
+if [ "$1" = "--enable" ] || [ "$1" = "--disable" ]; then
+  echo "update-binfmts: skipping $1 (binfmt_misc registered via kernel on GH Actions)" >&2
+  exit 0
+fi
+exec /usr/sbin/update-binfmts.real "$@"
+WRAP_EOF
+            sudo chmod +x /usr/sbin/update-binfmts
+          fi
+          
+          echo "=== QEMU test ==="
+          /usr/bin/qemu-aarch64-static --version 2>&1 | head -1 || echo "QEMU aarch64 OK"
+          echo "=== binfmt_misc ==="
+          ls /proc/sys/fs/binfmt_misc/qemu* 2>/dev/null || echo "(kernel binfmt)"
+          echo "Binfmt wrapper:"
+          file /usr/sbin/update-binfmts
 
       - name: 复制自定义板级配置
         run: |
