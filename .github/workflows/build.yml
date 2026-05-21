@@ -75,12 +75,46 @@ jobs:
             echo ':qemu-arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-arm-static:OCF' | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null
           fi
           
-          # 包装 update-binfmts (systemd-binfmt 在 GH Actions 上不可用)
-          if [ -f /usr/sbin/update-binfmts ] && [ ! -f /usr/sbin/update-binfmts.real ]; then
+          # 创建 /usr/share/binfmts 目录和所有 Armbian 需要的 binfmt 配置文件
+          # Armbian 遍历 arm aarch64 x86_64 riscv64 loongarch64 并调用 update-binfmts --enable
+          sudo mkdir -p /usr/share/binfmts
+          for arch in arm aarch64 x86_64 riscv64 loongarch64; do
+            if [ ! -f "/usr/share/binfmts/qemu-${arch}" ]; then
+              echo "package qemu-user-static
+interpreter /usr/bin/qemu-${arch}-static
+magic \x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00
+offset 0
+mask \xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff
+credentials yes
+fix_binary no
+preserve yes" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
+            fi
+          done
+          
+          # 完全替换 update-binfmts 为 no-op wrapper
+          # Armbian 的 prepare_host_binfmt_qemu_cross() 会调用 update-binfmts --enable qemu-xxx
+          # 在 GH Actions 中 binfmt 已通过内核直接注册，不需要 update-binfmts
+          if [ ! -f /usr/sbin/update-binfmts.real ]; then
             sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
-            printf '#!/bin/bash\nif [[ "$1" == "--enable" ]] || [[ "$1" == "--disable" ]]; then\n  echo "update-binfmts: binfmt registered via kernel ($*)" >&2\n  exit 0\nfi\nexec /usr/sbin/update-binfmts.real "$@"\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
-            sudo chmod +x /usr/sbin/update-binfmts
           fi
+          sudo tee /usr/sbin/update-binfmts > /dev/null << 'BINFMT_WRAPPER'
+#!/bin/bash
+# Armbian binfmt wrapper for GitHub Actions
+# All binfmt registrations are done via kernel /proc/sys/fs/binfmt_misc/register
+case "$1" in
+  --enable|--disable|--import)
+    echo "update-binfmts: skipped ($*) - binfmt registered via kernel" >&2
+    exit 0
+    ;;
+  --display|--find|--quit)
+    exec /usr/sbin/update-binfmts.real "$@"
+    ;;
+  *)
+    exec /usr/sbin/update-binfmts.real "$@"
+    ;;
+esac
+BINFMT_WRAPPER
+          sudo chmod +x /usr/sbin/update-binfmts
           
           echo "=== QEMU test ==="
           /usr/bin/qemu-aarch64-static --version 2>&1 | head -1 || echo "QEMU aarch64 OK"
