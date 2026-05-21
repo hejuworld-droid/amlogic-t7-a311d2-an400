@@ -117,6 +117,7 @@ jobs:
             BUILD_MINIMAL=yes \
             KERNEL_CONFIGURE=no \
             KERNEL_KEEP_CONFIG=no \
+            DOCKER=no \
             2>&1 | tee /tmp/armbian-build.log
 
       - name: 构建失败 - 输出调试信息
