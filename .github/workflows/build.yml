@@ -1,0 +1,86 @@
+name: Build Armbian for A311D2 AN400
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: '系统版本'
+        required: true
+        default: 'bookworm'
+        type: choice
+        options:
+          - bookworm
+          - noble
+      desktop:
+        description: '是否包含桌面环境'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - no
+          - yes
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout 自定义配置
+        uses: actions/checkout@v4
+        with:
+          path: custom-config
+
+      - name: Checkout Armbian 构建系统
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          path: build
+          ref: main
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ca-certificates ccache cpio curl \
+            device-tree-compiler dialog dirmngr dosfstools fakeroot \
+            flex gawk git gnupg gperf libelf-dev liblz4-tool \
+            libncurses5-dev libsdl2-dev libssl-dev lsb-release \
+            lzop mtools ninja-build parted pkg-config \
+            python3 python3-pip rsync sudo swig u-boot-tools \
+            udev unzip wget xz-utils zip zlib1g-dev
+
+      - name: 复制自定义板级配置
+        run: |
+          cp -v custom-config/config/boards/an400.conf build/config/boards/
+
+      - name: 扩展磁盘空间
+        run: |
+          sudo apt-get install -y lvm2
+          sudo pvcreate /dev/sdb || true
+          sudo vgextend ubuntu-vg /dev/sdb || true
+          sudo lvextend -L 50G -r /dev/mapper/ubuntu--vg-ubuntu--lv || true
+          df -h /
+
+      - name: 构建 Armbian
+        run: |
+          cd build
+          ./compile.sh \
+            BOARD=an400 \
+            BRANCH=edge \
+            RELEASE=${{ inputs.release_type }} \
+            BUILD_DESKTOP=${{ inputs.desktop }} \
+            BUILD_MINIMAL=yes \
+            KERNEL_CONFIGURE=no \
+            KERNEL_KEEP_CONFIG=no
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: armbian-an400-${{ inputs.release_type }}-${{ github.run_id }}
+          path: |
+            build/output/images/*.img
+            build/output/images/*.sha
+            build/output/images/*.txt
+          retention-days: 30
+          compression-level: 0
