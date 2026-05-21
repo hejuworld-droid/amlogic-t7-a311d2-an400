@@ -32,7 +32,7 @@ echo "安装依赖..."
 echo "开始构建..."
 ./compile.sh \
     BOARD=an400 \
-    BRANCH=edge \
+    BRANCH=legacy \
     RELEASE=bookworm \
     BUILD_DESKTOP=no \
     BUILD_MINIMAL=yes \

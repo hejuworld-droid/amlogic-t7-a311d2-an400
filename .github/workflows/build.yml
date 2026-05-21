@@ -92,7 +92,6 @@ jobs:
       - name: 复制自定义板级配置
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
-          cp -v custom-config/config/sources/families/meson-no-uboot.conf build/config/sources/families/
 
       - name: 扩展磁盘空间
         run: |
@@ -107,7 +106,7 @@ jobs:
           cd build
           ./compile.sh \
             BOARD=an400 \
-            BRANCH=edge \
+            BRANCH=legacy \
             RELEASE="${{ inputs.release_type || 'bookworm' }}" \
             BUILD_DESKTOP="${{ inputs.desktop || 'no' }}" \
             BUILD_MINIMAL=yes \
