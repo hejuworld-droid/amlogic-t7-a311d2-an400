@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
   schedule:
-    - cron: '0 2 * * 0'  # 每周日凌晨2点自动构建
+    - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
       release_type:
@@ -28,7 +28,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
             lzop mtools ninja-build parted pkg-config \
             python3 python3-pip rsync sudo swig u-boot-tools \
             udev unzip wget xz-utils zip zlib1g-dev \
-            qemu-user-static
+            qemu-user-static xxd
 
           sudo modprobe binfmt_misc 2>/dev/null || true
           sudo mount -t binfmt_misc none /proc/sys/fs/binfmt_misc 2>/dev/null || true
@@ -111,16 +111,15 @@ jobs:
           /usr/bin/qemu-aarch64-static --version 2>&1 | head -1 || echo "QEMU aarch64 OK"
           echo "=== binfmt_misc ==="
           ls /proc/sys/fs/binfmt_misc/qemu* 2>/dev/null || echo "(kernel binfmt)"
-          echo "=== update-binfmts wrapper ==="
-          cat /usr/sbin/update-binfmts
-          echo "=== dpkg-divert ==="
-          dpkg-divert --list /usr/sbin/update-binfmts
 
       - name: 复制自定义板级配置
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
-          mkdir -p build/packages/bsp/meson-s4t7/an400
+          mkdir -p build/packages/bsp/meson-s4t7/an400/etc/initramfs-tools
+          mkdir -p build/packages/bsp/meson-s4t7/an400/etc/modprobe.d
           cp -rv custom-config/config/packages/bsp/meson-s4t7/an400/* build/packages/bsp/meson-s4t7/an400/
+          echo "=== BSP directory structure ==="
+          find build/packages/bsp/meson-s4t7/ -type f
 
       - name: 扩展磁盘空间
         run: |
@@ -157,28 +156,21 @@ jobs:
           cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
           echo "--- Family 配置 ---"
           cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -50 || echo "meson-s4t7.conf not found"
+          echo "--- BSP 目录 ---"
+          find build/packages/bsp/meson-s4t7/ -type f 2>/dev/null || echo "BSP dir not found"
           echo "--- U-Boot 源码 ---"
           ls -la build/cache/sources/u-boot/ 2>/dev/null || echo "u-boot cache not found"
           find build/cache/sources/u-boot -name "*.log" 2>/dev/null | head -5
           echo "--- U-Boot defconfig ---"
           find build/cache/sources/u-boot -name "t7_an400*" -o -name "kvim4*" 2>/dev/null | head -20
-          find build/cache/sources/u-boot -path "*/configs/*defconfig" 2>/dev/null | grep -i "t7\|kvim\|an400\|tvpro\|65t33z" | head -20
-          find build/cache/sources/u-boot -path "*/board/amlogic/*" -maxdepth 5 2>/dev/null | grep -i "t7\|kvim\|an400\|tvpro\|65t33z" | head -20
+          find build/cache/sources/u-boot -path "*/configs/*defconfig" 2>/dev/null | grep -i "t7\|kvim\|an400" | head -20
           echo "--- FIP 目录 ---"
           find build/cache/sources/u-boot -name "fip" -type d 2>/dev/null | head -5
           find build/cache/sources/u-boot -path "*/fip/mk*" 2>/dev/null | head -10
-          find build/cache/sources/u-boot -path "*/fip/variables*" 2>/dev/null | head -5
-          echo "--- 内核源码 ---"
-          ls -la build/cache/sources/kernel/ 2>/dev/null || echo "kernel cache not found"
           echo "--- 构建日志（错误行）---"
           grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:" /tmp/armbian-build.log 2>/dev/null | tail -80 || echo "No build log found"
           echo "--- 构建日志最后 200 行 ---"
           tail -200 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
-          echo "--- Armbian 日志文件 ---"
-          find build/output/logs -name "*.log" 2>/dev/null | head -5 | while read f; do
-            echo "=== $f ==="
-            tail -100 "$f" 2>/dev/null
-          done
 
       - name: 上传构建产物
         if: always()
