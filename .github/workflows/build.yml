@@ -78,7 +78,7 @@ jobs:
           # 包装 update-binfmts (systemd-binfmt 在 GH Actions 上不可用)
           if [ -f /usr/sbin/update-binfmts ] && [ ! -f /usr/sbin/update-binfmts.real ]; then
             sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
-            printf '#!/bin/bash\nif [ "$1" = "--enable" ] || [ "$1" = "--disable" ]; then\n  echo "update-binfmts: binfmt registered via kernel" >&2\n  exit 0\nfi\nexec /usr/sbin/update-binfmts.real "$@"\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
+            printf '#!/bin/bash\nif [[ "$1" == "--enable" ]] || [[ "$1" == "--disable" ]]; then\n  echo "update-binfmts: binfmt registered via kernel ($*)" >&2\n  exit 0\nfi\nexec /usr/sbin/update-binfmts.real "$@"\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
             sudo chmod +x /usr/sbin/update-binfmts
           fi
           
@@ -95,15 +95,20 @@ jobs:
 
       - name: 扩展磁盘空间
         run: |
-          sudo apt-get install -y lvm2
-          sudo pvcreate /dev/sdb || true
-          sudo vgextend ubuntu-vg /dev/sdb || true
-          sudo lvextend -L 50G -r /dev/mapper/ubuntu--vg-ubuntu--lv || true
+          if [ -b /dev/sdb ]; then
+            sudo apt-get install -y lvm2
+            sudo pvcreate /dev/sdb || true
+            sudo vgextend ubuntu-vg /dev/sdb || true
+            sudo lvextend -L 50G -r /dev/mapper/ubuntu--vg-ubuntu--lv || true
+          else
+            echo "No /dev/sdb found, skipping LVM expansion"
+          fi
           df -h /
 
       - name: 构建 Armbian
         run: |
           cd build
+          set -o pipefail
           ./compile.sh \
             BOARD=an400 \
             BRANCH=legacy \
@@ -146,6 +151,7 @@ jobs:
           done
 
       - name: 上传构建产物
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: armbian-an400-${{ inputs.release_type || 'bookworm' }}-${{ github.run_id }}
@@ -155,6 +161,7 @@ jobs:
             build/output/images/*.txt
           retention-days: 30
           compression-level: 0
+          if-no-files-found: warn
 
       - name: 构建失败 - 创建 Issue
         if: failure()
