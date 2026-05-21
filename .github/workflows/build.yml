@@ -88,25 +88,28 @@ jobs:
           fi
 
           sudo mkdir -p /usr/share/binfmts
-          for arch in arm aarch64 x86_64 riscv64 loongarch64; do
-            if [ ! -f "/usr/share/binfmts/qemu-${arch}" ]; then
-              printf 'package qemu-user-static\ninterpreter /usr/bin/qemu-%s-static\nmagic \\x7f\\x45\\x4c\\x46\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\noffset 0\nmask \\xff\\xff\\xff\\xff\\xff\\xff\\xff\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff\ncredentials yes\nfix_binary no\npreserve yes\n' "${arch}" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
-            fi
+          for arch in arm aarch64 riscv64 loongarch64; do
+            case "${arch}" in
+              arm)     magic='\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00' ;;
+              aarch64) magic='\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00' ;;
+              riscv64) magic='\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xf3\x00' ;;
+              loongarch64) magic='\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x02\x01' ;;
+            esac
+            mask='\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff'
+            printf 'package qemu-user-static\ninterpreter /usr/bin/qemu-%s-static\nmagic %s\nmask %s\noffset 0\ncredentials yes\nfix_binary no\npreserve yes\n' "${arch}" "${magic}" "${mask}" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
           done
 
-          if command -v dpkg-divert >/dev/null 2>&1 && ! dpkg-divert --list /usr/sbin/update-binfmts 2>/dev/null | grep -q update-binfmts; then
-            sudo dpkg-divert --divert /usr/sbin/update-binfmts.real --rename /usr/sbin/update-binfmts
-          elif [ -f /usr/sbin/update-binfmts ] && [ ! -L /usr/sbin/update-binfmts ]; then
-            sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
-          fi
-          if [ -f /usr/sbin/update-binfmts.real ]; then
-            printf '#!/bin/bash\ncase "$1" in\n  --enable|--disable|--import)\n    shift\n    if [ $# -gt 0 ]; then shift; fi\n    exit 0\n    ;;\n  *)\n    exec /usr/sbin/update-binfmts.real "$@" 2>/dev/null\n    ;;\nesac\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
-            sudo chmod +x /usr/sbin/update-binfmts
-          fi
+          sudo dpkg-divert --local --divert /usr/sbin/update-binfmts.real --rename /usr/sbin/update-binfmts 2>/dev/null || true
+          printf '#!/bin/bash\ncase "$1" in\n  --enable|--disable|--import)\n    exit 0\n    ;;\n  *)\n    if [ -x /usr/sbin/update-binfmts.real ]; then\n      exec /usr/sbin/update-binfmts.real "$@" 2>/dev/null\n    fi\n    exit 0\n    ;;\nesac\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
+          sudo chmod +x /usr/sbin/update-binfmts
 
           echo "=== QEMU binfmt verification ==="
           ls /proc/sys/fs/binfmt_misc/qemu* 2>/dev/null || echo "No kernel binfmt entries"
           /usr/bin/qemu-aarch64-static --version 2>&1 | head -1
+          echo "=== update-binfmts wrapper ==="
+          cat /usr/sbin/update-binfmts
+          echo "=== dpkg-divert status ==="
+          dpkg-divert --list /usr/sbin/update-binfmts 2>/dev/null || echo "No divert"
 
       - name: Copy custom board config and patches
         run: |
@@ -159,7 +162,7 @@ jobs:
           cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
           echo ""
           echo "=== Family Config ==="
-          cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -50 || echo "meson-s4t7.conf not found"
+          cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -80 || echo "meson-s4t7.conf not found"
           echo ""
           echo "=== BSP Directory ==="
           find build/packages/bsp/meson-s4t7/ -type f 2>/dev/null || echo "BSP directory not found"
@@ -169,13 +172,17 @@ jobs:
           echo ""
           echo "=== U-Boot Cache ==="
           find build/cache/sources/u-boot/ -name "*.defconfig" 2>/dev/null | head -20 || echo "No defconfig found"
-          find build/cache/sources/u-boot/ -name "kvim4*" 2>/dev/null | head -20 || echo "No VIM4 files found"
+          find build/cache/sources/u-boot/ -name "kvim4*" -o -name "t7_an400*" 2>/dev/null | head -20 || echo "No VIM4/AN400 files found"
+          echo ""
+          echo "=== update-binfmts status ==="
+          cat /usr/sbin/update-binfmts 2>/dev/null | head -5 || echo "update-binfmts not found"
+          dpkg-divert --list /usr/sbin/update-binfmts 2>/dev/null || echo "No divert"
           echo ""
           echo "=== Build Log Errors ==="
-          grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:" /tmp/armbian-build.log 2>/dev/null | tail -80 || echo "No build log found"
+          grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:\|BOOTCONFIG\|build_custom_uboot\|EXTENSION_BUILT_UBOOT" /tmp/armbian-build.log 2>/dev/null | tail -100 || echo "No build log found"
           echo ""
-          echo "=== Build Log (last 200 lines) ==="
-          tail -200 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
+          echo "=== Build Log (last 300 lines) ==="
+          tail -300 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
 
       - name: Create issue on failure
         if: failure()
@@ -184,10 +191,7 @@ jobs:
           script: |
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const title = `Build failed: ${context.sha.substring(0, 7)}`;
-            const body = `Build failed on commit ${context.sha}\n
-Run: ${runUrl}
-
-Please check the logs for details.`;
+            const body = `Build failed on commit ${context.sha}\n\nRun: ${runUrl}\n\nPlease check the logs for details.`;
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
