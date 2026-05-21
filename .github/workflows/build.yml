@@ -97,17 +97,7 @@ preserve yes" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
           if [ ! -f /usr/sbin/update-binfmts.real ]; then
             sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
           fi
-          sudo tee /usr/sbin/update-binfmts > /dev/null << 'BINFMT_WRAPPER'
-#!/bin/bash
-case "$1" in
-  --enable|--disable|--import)
-    exit 0
-    ;;
-  *)
-    exec /usr/sbin/update-binfmts.real "$@" 2>/dev/null
-    ;;
-esac
-BINFMT_WRAPPER
+          sudo bash -c 'printf "#!/bin/bash\ncase \"\$1\" in\n  --enable|--disable|--import)\n    exit 0\n    ;;\n  *)\n    exec /usr/sbin/update-binfmts.real \"\$@\" 2>/dev/null\n    ;;\nesac\n" > /usr/sbin/update-binfmts'
           sudo chmod +x /usr/sbin/update-binfmts
           
           echo "=== QEMU test ==="
