@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: hejuworld-droid <hejuworld-droid@users.noreply.github.com>
+Date: Thu, 22 May 2026 00:00:00 +0800
+Subject: [PATCH] AN400: Modify kvim4.h board identification for AN400
+
+Change khadas_board identifier from VIM4 to AN400 in the U-Boot
+header file. This ensures correct board identification in U-Boot
+environment and boot logs.
+
+This patch is applied after the official Mod-default-bootargs.patch.
+---
+ board/khadas/configs/kvim4.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/board/khadas/configs/kvim4.h b/board/khadas/configs/kvim4.h
+index 626f7d37..bbbbbbbb 100644
+--- a/board/khadas/configs/kvim4.h
++++ b/board/khadas/configs/kvim4.h
+@@ -219,7 +219,7 @@
+         "initargs="\
+ 		\
+ 		"ramoops.pstore_en=1 ramoops.record_size=0x8000 ramoops.console_size=0x4000 loop.max_part=4 "\
+ 		"scsi_mod.scan=async xhci_hcd.quirks=0x800000 scramble_reg=0xfe02e030 gamma=0 "\
+-		"khadas_board=VIM4 boot_source=${boot_source} "\
++		"khadas_board=AN400 boot_source=${boot_source} "\
+             "\0"\
+         "nfs_boot="\
+             "dhcp;"\
+-- 
+2.43.0

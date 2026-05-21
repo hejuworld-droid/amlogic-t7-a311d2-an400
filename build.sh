@@ -1,35 +1,32 @@
 #!/bin/bash
-# Amlogic A311D2 AN400 Armbian 本地构建脚本
 set -e
 
-echo "=== A311D2 AN400 Armbian 本地构建 ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ARMBIAN_DIR="${SCRIPT_DIR}/build"
 
-check_deps() {
-    echo "检查构建依赖..."
-    local deps=("git" "make" "gcc" "bc" "device-tree-compiler" "flex" "bison")
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            echo "缺少: $dep"
-            sudo apt-get install -y build-essential bc device-tree-compiler flex bison
-            return
-        fi
-    done
-}
-
-if [ ! -d "build" ]; then
-    echo "克隆 Armbian 构建系统..."
-    git clone --depth=1 https://github.com/armbian/build.git
+if [ ! -d "${ARMBIAN_DIR}" ]; then
+    echo "Cloning Armbian build system..."
+    git clone --depth=1 https://github.com/armbian/build.git "${ARMBIAN_DIR}"
 fi
 
-echo "复制板级配置..."
-cp -v config/boards/an400.conf build/config/boards/
+cp -v "${SCRIPT_DIR}/config/boards/an400.conf" "${ARMBIAN_DIR}/config/boards/"
 
-cd build
+mkdir -p "${ARMBIAN_DIR}/packages/bsp/meson-s4t7/an400/etc/initramfs-tools"
+mkdir -p "${ARMBIAN_DIR}/packages/bsp/meson-s4t7/an400/etc/modprobe.d"
+cp -rv "${SCRIPT_DIR}/config/packages/bsp/meson-s4t7/an400/"* "${ARMBIAN_DIR}/packages/bsp/meson-s4t7/an400/"
 
-echo "安装依赖..."
-./compile.sh prerequisites || true
+mkdir -p "${ARMBIAN_DIR}/patch/u-boot/u-boot-meson-s4t7"
+if ls "${SCRIPT_DIR}/patch/u-boot/u-boot-meson-s4t7/"*.patch 1>/dev/null 2>&1; then
+    cp -v "${SCRIPT_DIR}/patch/u-boot/u-boot-meson-s4t7/"*.patch "${ARMBIAN_DIR}/patch/u-boot/u-boot-meson-s4t7/"
+fi
 
-echo "开始构建..."
+echo "=== BSP directory structure ==="
+find "${ARMBIAN_DIR}/packages/bsp/meson-s4t7/" -type f
+echo "=== U-Boot patches ==="
+ls -la "${ARMBIAN_DIR}/patch/u-boot/u-boot-meson-s4t7/"
+
+cd "${ARMBIAN_DIR}"
+
 ./compile.sh \
     BOARD=an400 \
     BRANCH=legacy \
@@ -37,6 +34,3 @@ echo "开始构建..."
     BUILD_DESKTOP=no \
     BUILD_MINIMAL=yes \
     KERNEL_CONFIGURE=no
-
-echo "=== 构建完成 ==="
-echo "镜像: build/output/images/"

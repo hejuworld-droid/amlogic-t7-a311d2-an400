@@ -7,8 +7,8 @@ on:
     - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
-      release_type:
-        description: '系统版本'
+      release:
+        description: 'Release version'
         required: true
         default: 'bookworm'
         type: choice
@@ -16,13 +16,13 @@ on:
           - bookworm
           - noble
       desktop:
-        description: '是否包含桌面环境'
+        description: 'Build desktop'
         required: true
         default: 'no'
         type: choice
         options:
-          - no
-          - yes
+          - 'yes'
+          - 'no'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -30,26 +30,29 @@ env:
 permissions:
   contents: write
   issues: write
+  actions: read
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 600
 
     steps:
-      - name: Checkout 自定义配置
+      - name: Checkout custom config
         uses: actions/checkout@v4
         with:
           path: custom-config
+          fetch-depth: 1
 
-      - name: Checkout Armbian 构建系统
+      - name: Checkout Armbian build system
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build
           ref: main
+          fetch-depth: 1
 
-      - name: 安装构建依赖 + QEMU + 修复 binfmt
+      - name: Install dependencies and setup QEMU/binfmt
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -60,7 +63,7 @@ jobs:
             lzop mtools ninja-build parted pkg-config \
             python3 python3-pip rsync sudo swig u-boot-tools \
             udev unzip wget xz-utils zip zlib1g-dev \
-            qemu-user-static xxd
+            qemu-user-static xxd binfmt-support
 
           sudo modprobe binfmt_misc 2>/dev/null || true
           sudo mount -t binfmt_misc none /proc/sys/fs/binfmt_misc 2>/dev/null || true
@@ -73,7 +76,7 @@ jobs:
                 riscv64) magic='\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xf3\x00' ;;
               esac
               mask='\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff'
-              echo ":qemu-${arch}:M::${magic}:${mask}:/usr/bin/qemu-${arch}-static:OCF" | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null
+              echo ":qemu-${arch}:M::${magic}:${mask}:/usr/bin/qemu-${arch}-static:OCF" | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null 2>&1 || true
             fi
           done
 
@@ -81,7 +84,7 @@ jobs:
             sudo ln -sf /bin/true /usr/bin/qemu-loongarch64-static
           fi
           if [ ! -f /proc/sys/fs/binfmt_misc/qemu-loongarch64 ]; then
-            echo ':qemu-loongarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x02\x01:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-loongarch64-static:OCF' | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null || true
+            echo ':qemu-loongarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x02\x01:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-loongarch64-static:OCF' | sudo tee /proc/sys/fs/binfmt_misc/register > /dev/null 2>&1 || true
           fi
 
           sudo mkdir -p /usr/share/binfmts
@@ -91,92 +94,56 @@ jobs:
             fi
           done
 
-          if ! dpkg-divert --list /usr/sbin/update-binfmts | grep -q update-binfmts; then
-            sudo dpkg-divert --divert /usr/sbin/update-binfmts.debian --rename /usr/sbin/update-binfmts
+          if command -v dpkg-divert >/dev/null 2>&1 && ! dpkg-divert --list /usr/sbin/update-binfmts 2>/dev/null | grep -q update-binfmts; then
+            sudo dpkg-divert --divert /usr/sbin/update-binfmts.real --rename /usr/sbin/update-binfmts
+          elif [ -f /usr/sbin/update-binfmts ] && [ ! -L /usr/sbin/update-binfmts ]; then
+            sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
           fi
-          sudo tee /usr/sbin/update-binfmts > /dev/null << 'WRAPPER_EOF'
-          #!/bin/bash
-          case "$1" in
-            --enable|--disable|--import)
-              exit 0
-              ;;
-            *)
-              exec /usr/sbin/update-binfmts.debian "$@" 2>/dev/null
-              ;;
-          esac
-          WRAPPER_EOF
-          sudo chmod +x /usr/sbin/update-binfmts
+          if [ -f /usr/sbin/update-binfmts.real ]; then
+            printf '#!/bin/bash\ncase "$1" in\n  --enable|--disable|--import)\n    shift\n    if [ $# -gt 0 ]; then shift; fi\n    exit 0\n    ;;\n  *)\n    exec /usr/sbin/update-binfmts.real "$@" 2>/dev/null\n    ;;\nesac\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
+            sudo chmod +x /usr/sbin/update-binfmts
+          fi
 
-          echo "=== QEMU test ==="
-          /usr/bin/qemu-aarch64-static --version 2>&1 | head -1 || echo "QEMU aarch64 OK"
-          echo "=== binfmt_misc ==="
-          ls /proc/sys/fs/binfmt_misc/qemu* 2>/dev/null || echo "(kernel binfmt)"
+          echo "=== QEMU binfmt verification ==="
+          ls /proc/sys/fs/binfmt_misc/qemu* 2>/dev/null || echo "No kernel binfmt entries"
+          /usr/bin/qemu-aarch64-static --version 2>&1 | head -1
 
-      - name: 复制自定义板级配置
+      - name: Copy custom board config and patches
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
           mkdir -p build/packages/bsp/meson-s4t7/an400/etc/initramfs-tools
           mkdir -p build/packages/bsp/meson-s4t7/an400/etc/modprobe.d
           cp -rv custom-config/config/packages/bsp/meson-s4t7/an400/* build/packages/bsp/meson-s4t7/an400/
+          mkdir -p build/patch/u-boot/u-boot-meson-s4t7
+          if ls custom-config/patch/u-boot/u-boot-meson-s4t7/*.patch 1>/dev/null 2>&1; then
+            cp -v custom-config/patch/u-boot/u-boot-meson-s4t7/*.patch build/patch/u-boot/u-boot-meson-s4t7/
+          fi
           echo "=== BSP directory structure ==="
           find build/packages/bsp/meson-s4t7/ -type f
+          echo "=== U-Boot patches ==="
+          ls -la build/patch/u-boot/u-boot-meson-s4t7/
 
-      - name: 扩展磁盘空间
+      - name: Build Armbian
         run: |
-          if [ -b /dev/sdb ]; then
-            sudo apt-get install -y lvm2
-            sudo pvcreate /dev/sdb || true
-            sudo vgextend ubuntu-vg /dev/sdb || true
-            sudo lvextend -L 50G -r /dev/mapper/ubuntu--vg-ubuntu--lv || true
-          else
-            echo "No /dev/sdb found, skipping LVM expansion"
-          fi
-          df -h /
-
-      - name: 构建 Armbian
-        run: |
-          cd build
           set -o pipefail
+          cd build
+          RELEASE="${{ github.event.inputs.release || 'bookworm' }}"
+          BUILD_DESKTOP="${{ github.event.inputs.desktop || 'no' }}"
           ./compile.sh \
             BOARD=an400 \
             BRANCH=legacy \
-            RELEASE="${{ inputs.release_type || 'bookworm' }}" \
-            BUILD_DESKTOP="${{ inputs.desktop || 'no' }}" \
+            RELEASE=$RELEASE \
+            BUILD_DESKTOP=$BUILD_DESKTOP \
             BUILD_MINIMAL=yes \
             KERNEL_CONFIGURE=no \
-            KERNEL_KEEP_CONFIG=no \
             DOCKER=no \
             2>&1 | tee /tmp/armbian-build.log
 
-      - name: 构建失败 - 输出调试信息
-        if: failure()
-        run: |
-          echo "=== 构建失败调试信息 ==="
-          echo "--- 板级配置 ---"
-          cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
-          echo "--- Family 配置 ---"
-          cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -50 || echo "meson-s4t7.conf not found"
-          echo "--- BSP 目录 ---"
-          find build/packages/bsp/meson-s4t7/ -type f 2>/dev/null || echo "BSP dir not found"
-          echo "--- U-Boot 源码 ---"
-          ls -la build/cache/sources/u-boot/ 2>/dev/null || echo "u-boot cache not found"
-          find build/cache/sources/u-boot -name "*.log" 2>/dev/null | head -5
-          echo "--- U-Boot defconfig ---"
-          find build/cache/sources/u-boot -name "t7_an400*" -o -name "kvim4*" 2>/dev/null | head -20
-          find build/cache/sources/u-boot -path "*/configs/*defconfig" 2>/dev/null | grep -i "t7\|kvim\|an400" | head -20
-          echo "--- FIP 目录 ---"
-          find build/cache/sources/u-boot -name "fip" -type d 2>/dev/null | head -5
-          find build/cache/sources/u-boot -path "*/fip/mk*" 2>/dev/null | head -10
-          echo "--- 构建日志（错误行）---"
-          grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:" /tmp/armbian-build.log 2>/dev/null | tail -80 || echo "No build log found"
-          echo "--- 构建日志最后 200 行 ---"
-          tail -200 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
-
-      - name: 上传构建产物
-        if: always()
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: armbian-an400-${{ inputs.release_type || 'bookworm' }}-${{ github.run_id }}
+          name: armbian-an400-images
           path: |
             build/output/images/*.img
             build/output/images/*.sha
@@ -185,13 +152,42 @@ jobs:
           compression-level: 0
           if-no-files-found: warn
 
-      - name: 构建失败 - 创建 Issue
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== Board Config ==="
+          cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
+          echo ""
+          echo "=== Family Config ==="
+          cat build/config/sources/families/meson-s4t7.conf 2>/dev/null | head -50 || echo "meson-s4t7.conf not found"
+          echo ""
+          echo "=== BSP Directory ==="
+          find build/packages/bsp/meson-s4t7/ -type f 2>/dev/null || echo "BSP directory not found"
+          echo ""
+          echo "=== U-Boot Patches ==="
+          ls -la build/patch/u-boot/u-boot-meson-s4t7/ 2>/dev/null || echo "No U-Boot patches found"
+          echo ""
+          echo "=== U-Boot Cache ==="
+          find build/cache/sources/u-boot/ -name "*.defconfig" 2>/dev/null | head -20 || echo "No defconfig found"
+          find build/cache/sources/u-boot/ -name "kvim4*" 2>/dev/null | head -20 || echo "No VIM4 files found"
+          echo ""
+          echo "=== Build Log Errors ==="
+          grep -i "error\|failed\|fatal\|cannot\|not found\|no such\|no rule\|defconfig\|make:" /tmp/armbian-build.log 2>/dev/null | tail -80 || echo "No build log found"
+          echo ""
+          echo "=== Build Log (last 200 lines) ==="
+          tail -200 /tmp/armbian-build.log 2>/dev/null || echo "No build log found"
+
+      - name: Create issue on failure
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-            const body = `## 构建失败 🚨\n\n- **运行**: [${process.env.GITHUB_RUN_ID}](${runUrl})\n- **触发**: ${context.eventName}\n- **提交**: ${context.sha}\n\n请检查日志修复后重新推送。`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `Build failed: ${context.sha.substring(0, 7)}`;
+            const body = `Build failed on commit ${context.sha}\n
+Run: ${runUrl}
+
+Please check the logs for details.`;
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -202,7 +198,7 @@ jobs:
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: '构建失败 - 需要修复',
+                title: title,
                 body: body,
                 labels: ['build-failure']
               });

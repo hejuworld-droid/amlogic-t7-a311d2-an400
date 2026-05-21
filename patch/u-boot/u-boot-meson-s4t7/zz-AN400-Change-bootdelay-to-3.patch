@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: hejuworld-droid <hejuworld-droid@users.noreply.github.com>
+Date: Thu, 22 May 2026 00:00:00 +0800
+Subject: [PATCH] AN400: Change bootdelay to 3 for U-Boot console interrupt
+
+The original kvim4_defconfig sets BOOTDELAY=2 which is too short
+for reliable U-Boot console access. Change to 3 seconds to allow
+users to interrupt boot and access U-Boot command line.
+
+This patch is applied after the official Update-kvim4_defconfig.patch.
+---
+ board/khadas/defconfigs/kvim4_defconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/board/khadas/defconfigs/kvim4_defconfig b/board/khadas/defconfigs/kvim4_defconfig
+index 515d1471..aaaaaaaa 100644
+--- a/board/khadas/defconfigs/kvim4_defconfig
++++ b/board/khadas/defconfigs/kvim4_defconfig
+@@ -15,7 +15,7 @@ CONFIG_ARMV8_CRYPTO=y
+ CONFIG_DEBUG_UART=y
+ # CONFIG_ANDROID_BOOT_IMAGE is not set
+ CONFIG_OF_BOARD_SETUP=y
+ CONFIG_SD_BOOT=y
+-CONFIG_BOOTDELAY=2
++CONFIG_BOOTDELAY=3
+ CONFIG_BOARD_LATE_INIT=y
+ # CONFIG_DISPLAY_CPUINFO is not set
+ # CONFIG_DISPLAY_BOARDINFO is not set
+-- 
+2.43.0
