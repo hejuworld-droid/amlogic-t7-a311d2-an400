@@ -119,6 +119,8 @@ jobs:
       - name: 复制自定义板级配置
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
+          mkdir -p build/packages/bsp/meson-s4t7/an400
+          cp -rv custom-config/config/packages/bsp/meson-s4t7/an400/* build/packages/bsp/meson-s4t7/an400/
 
       - name: 扩展磁盘空间
         run: |
