@@ -72,14 +72,7 @@ jobs:
           # 包装 update-binfmts (systemd-binfmt 在 GH Actions 上不可用)
           if [ -f /usr/sbin/update-binfmts ] && [ ! -f /usr/sbin/update-binfmts.real ]; then
             sudo mv /usr/sbin/update-binfmts /usr/sbin/update-binfmts.real
-            sudo tee /usr/sbin/update-binfmts << 'WRAP_EOF'
-#!/bin/bash
-if [ "$1" = "--enable" ] || [ "$1" = "--disable" ]; then
-  echo "update-binfmts: skipping $1 (binfmt_misc registered via kernel on GH Actions)" >&2
-  exit 0
-fi
-exec /usr/sbin/update-binfmts.real "$@"
-WRAP_EOF
+            printf '#!/bin/bash\nif [ "$1" = "--enable" ] || [ "$1" = "--disable" ]; then\n  echo "update-binfmts: binfmt registered via kernel" >&2\n  exit 0\nfi\nexec /usr/sbin/update-binfmts.real "$@"\n' | sudo tee /usr/sbin/update-binfmts > /dev/null
             sudo chmod +x /usr/sbin/update-binfmts
           fi
           
@@ -108,8 +101,8 @@ WRAP_EOF
           ./compile.sh \
             BOARD=an400 \
             BRANCH=edge \
-            RELEASE=${{ inputs.release_type }} \
-            BUILD_DESKTOP=${{ inputs.desktop }} \
+            RELEASE="${{ inputs.release_type || 'bookworm' }}" \
+            BUILD_DESKTOP="${{ inputs.desktop || 'no' }}" \
             BUILD_MINIMAL=yes \
             KERNEL_CONFIGURE=no \
             KERNEL_KEEP_CONFIG=no
