@@ -113,6 +113,28 @@ jobs:
             KERNEL_CONFIGURE=no \
             KERNEL_KEEP_CONFIG=no
 
+      - name: 构建失败 - 输出调试信息
+        if: failure()
+        run: |
+          echo "=== 构建失败调试信息 ==="
+          echo "--- 板级配置 ---"
+          cat build/config/boards/an400.conf 2>/dev/null || echo "an400.conf not found"
+          echo "--- Family 配置 ---"
+          ls -la build/config/sources/families/meson-s4t7.conf 2>/dev/null || echo "meson-s4t7.conf not found"
+          echo "--- U-Boot 源码 ---"
+          ls -la build/cache/sources/u-boot/ 2>/dev/null || echo "u-boot cache not found"
+          echo "--- 内核源码 ---"
+          ls -la build/cache/sources/kernel/ 2>/dev/null || echo "kernel cache not found"
+          echo "--- 构建日志最后 100 行 ---"
+          find build/output/logs -name "*.log" -newer build/config/boards/an400.conf 2>/dev/null | head -5 | while read f; do
+            echo "=== $f ==="
+            tail -100 "$f" 2>/dev/null
+          done
+          find /tmp -name "*.log" -maxdepth 2 2>/dev/null | head -5 | while read f; do
+            echo "=== $f ==="
+            tail -50 "$f" 2>/dev/null
+          done
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
