@@ -92,6 +92,7 @@ jobs:
       - name: 复制自定义板级配置
         run: |
           cp -v custom-config/config/boards/an400.conf build/config/boards/
+          cp -v custom-config/config/sources/families/meson-no-uboot.conf build/config/sources/families/
 
       - name: 扩展磁盘空间
         run: |
