@@ -1,6 +1,8 @@
 name: Build Armbian for A311D2 AN400
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       release_type:
