@@ -99,18 +99,12 @@ preserve yes" | sudo tee "/usr/share/binfmts/qemu-${arch}" > /dev/null
           fi
           sudo tee /usr/sbin/update-binfmts > /dev/null << 'BINFMT_WRAPPER'
 #!/bin/bash
-# Armbian binfmt wrapper for GitHub Actions
-# All binfmt registrations are done via kernel /proc/sys/fs/binfmt_misc/register
 case "$1" in
   --enable|--disable|--import)
-    echo "update-binfmts: skipped ($*) - binfmt registered via kernel" >&2
     exit 0
     ;;
-  --display|--find|--quit)
-    exec /usr/sbin/update-binfmts.real "$@"
-    ;;
   *)
-    exec /usr/sbin/update-binfmts.real "$@"
+    exec /usr/sbin/update-binfmts.real "$@" 2>/dev/null
     ;;
 esac
 BINFMT_WRAPPER
