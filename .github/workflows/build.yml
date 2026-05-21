@@ -3,6 +3,8 @@ name: Build Armbian for A311D2 AN400
 on:
   push:
     branches: [master]
+  schedule:
+    - cron: '0 2 * * 0'  # 每周日凌晨2点自动构建
   workflow_dispatch:
     inputs:
       release_type:
@@ -24,6 +26,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   build:
@@ -110,10 +116,40 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: armbian-an400-${{ inputs.release_type }}-${{ github.run_id }}
+          name: armbian-an400-${{ inputs.release_type || 'bookworm' }}-${{ github.run_id }}
           path: |
             build/output/images/*.img
             build/output/images/*.sha
             build/output/images/*.txt
           retention-days: 30
           compression-level: 0
+
+      - name: 构建失败 - 创建 Issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const body = `## 构建失败 🚨\n\n- **运行**: [${process.env.GITHUB_RUN_ID}](${runUrl})\n- **触发**: ${context.eventName}\n- **提交**: ${context.sha}\n\n请检查日志修复后重新推送。`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['build-failure'],
+              state: 'open'
+            });
+            if (issues.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '构建失败 - 需要修复',
+                body: body,
+                labels: ['build-failure']
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body: body
+              });
+            }
