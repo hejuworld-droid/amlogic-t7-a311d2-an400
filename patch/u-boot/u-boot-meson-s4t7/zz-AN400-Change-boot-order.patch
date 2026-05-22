@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: hejuworld-droid <hejuworld-droid@users.noreply.github.com>
+Date: Thu, 22 May 2026 00:00:00 +0800
+Subject: [PATCH] AN400: Change boot order to SD card first
+
+The default boot order tries eMMC first, which causes hang if eMMC
+has no valid system. Change to SD card first for Armbian installation.
+
+This patch modifies kvim4.h to prioritize SD card boot.
+---
+ board/khadas/configs/kvim4.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/board/khadas/configs/kvim4.h b/board/khadas/configs/kvim4.h
+index 626f7d37..cccccccc 100644
+--- a/board/khadas/configs/kvim4.h
++++ b/board/khadas/configs/kvim4.h
+@@ -76,9 +76,9 @@
+ #endif
+ #ifndef BOOT_TARGET_DEVICES
+ #define BOOT_TARGET_DEVICES(func) \
+     BOOT_TARGET_DEVICES_USB(func) \
+-    func(MMC, mmc, 0) \
+     func(MMC, mmc, 1) \
++    func(MMC, mmc, 0) \
+     func(PXE, pxe, na) \
+     func(DHCP, dhcp, na)
+ #endif
+-- 
+2.43.0
